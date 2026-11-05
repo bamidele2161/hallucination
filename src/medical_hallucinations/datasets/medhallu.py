@@ -27,6 +27,7 @@ def load_medhallu(path: str | Path) -> list[dict[str, Any]]:
             "question": row["Question"],
             "passage": "\n\n".join(row["Knowledge"]),
             "difficulty": row["Difficulty Level"],
+            "hallucination_category": row["Category of Hallucination"],
             "split": "train",
         }
         for label, field in ((0, "Ground Truth"), (1, "Hallucinated Answer")):

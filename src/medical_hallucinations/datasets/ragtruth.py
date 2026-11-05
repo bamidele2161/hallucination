@@ -12,26 +12,10 @@ Example (from the project root after installing the package):
     print(examples[0]["question"])
 """
 
-import json
 from pathlib import Path
 from typing import Any
 
-
-def _read_jsonl(path: Path) -> list[dict[str, Any]]:
-    """Read JSON Lines: each nonempty line contains one JSON object."""
-    records = []
-    with path.open(encoding="utf-8") as file:
-        for line_number, line in enumerate(file, start=1):
-            if not line.strip():
-                continue
-            try:
-                record = json.loads(line)
-            except json.JSONDecodeError as error:
-                raise ValueError(f"{path}:{line_number}: invalid JSON") from error
-            if not isinstance(record, dict):
-                raise ValueError(f"{path}:{line_number}: expected a JSON object")
-            records.append(record)
-    return records
+from .base import read_jsonl
 
 
 def load_ragtruth(
@@ -56,14 +40,14 @@ def load_ragtruth(
 
     # Build an index so each answer can find its evidence by source_id.
     sources = {}
-    for source in _read_jsonl(data_dir / "source_info.jsonl"): #2965 samples
+    for source in read_jsonl(data_dir / "source_info.jsonl"): #2965 samples
         source_id = source["source_id"]
         if source_id in sources:
             raise ValueError(f"Duplicate source_id: {source_id!r}")
         sources[source_id] = source
 
     examples = []
-    for response in _read_jsonl(data_dir / "response.jsonl"): #17790 samples
+    for response in read_jsonl(data_dir / "response.jsonl"): #17790 samples
         source_id = response["source_id"]
         if source_id not in sources:
             raise ValueError(f"Unknown source_id: {source_id!r}")
