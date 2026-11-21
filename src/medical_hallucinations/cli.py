@@ -80,6 +80,17 @@ def _plot(args: argparse.Namespace) -> None:
         print(f"Saved {path}")
 
 
+def _report(args: argparse.Namespace) -> None:
+    from .pipelines.report import report
+
+    rows, figures = report()
+    print(f"Saved results/metrics/summary.{{csv,json,md}} ({len(rows)} detector/dataset rows)")
+    for path in figures:
+        print(f"Saved {path}")
+    if not figures:
+        print("Install the plot extra (matplotlib) for comparison figures")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -122,6 +133,11 @@ def main() -> None:
 
     plot = commands.add_parser("plot", help="Reliability diagrams from the calibrate outputs")
     plot.set_defaults(handler=_plot)
+
+    report = commands.add_parser(
+        "report", help="Stage 7: summary tables and cross-domain comparison figures"
+    )
+    report.set_defaults(handler=_report)
 
     args = parser.parse_args()
     args.handler(args)

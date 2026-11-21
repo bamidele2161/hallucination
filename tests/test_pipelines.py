@@ -11,6 +11,7 @@ from medical_hallucinations.detectors.base import Detector
 from medical_hallucinations.pipelines.calibrate import calibrate_all
 from medical_hallucinations.pipelines.evaluate import evaluate_all
 from medical_hallucinations.pipelines.inference import predictions_path, run_inference
+from medical_hallucinations.pipelines.report import report
 from medical_hallucinations.schemas import validate_examples
 
 
@@ -84,6 +85,23 @@ class PipelineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "revision"):
             run_inference(detector, self.examples, output, progress=False)
 
+    def test_inference_recovers_partial_line_and_rejects_stale_text(self):
+        detector = FakeDetector()
+        output = predictions_path(self.root / "predictions", "fake", "toy")
+        run_inference(detector, self.examples[:3], output, progress=False)
+        self.assertTrue(all("input_hash" in p for p in read_jsonl(output)))
+
+        # Simulate a crash in the middle of writing the next record.
+        with output.open("a", encoding="utf-8") as file:
+            file.write('{"id": "1:1", "revis')
+        self.assertEqual(run_inference(detector, self.examples[:4], output, progress=False), 1)
+        self.assertEqual([p["id"] for p in read_jsonl(output)],
+                         [e["id"] for e in self.examples[:4]])
+
+        changed = [{**self.examples[0], "answer": "Edited."}]
+        with self.assertRaisesRegex(ValueError, "different text"):
+            run_inference(detector, changed, output, progress=False)
+
     def test_evaluate_writes_overall_and_difficulty_rows(self):
         output = predictions_path(self.root / "predictions", "fake", "toy")
         run_inference(FakeDetector(), self.examples, output, progress=False)
@@ -139,6 +157,19 @@ class PipelineTests(unittest.TestCase):
             paths = plot_all(metrics_dir=self.root / "metrics", figures_dir=self.root / "figures")
             self.assertEqual(len(paths), 3)  # all, difficulty=easy, difficulty=hard
             self.assertTrue(all(path.stat().st_size > 0 for path in paths))
+
+    def test_report_joins_detection_and_calibration(self):
+        output = predictions_path(self.root / "predictions", "fake", "toy")
+        run_inference(NoisyDetector(), self.examples, output, progress=False)
+        evaluate_all(processed_dir=self.root / "processed",
+                     predictions_dir=self.root / "predictions", metrics_dir=self.root / "metrics")
+        self._calibrate(self.examples)
+        rows, figures = report(metrics_dir=self.root / "metrics", figures_dir=self.root / "figures")
+        self.assertEqual(len(rows), 1)  # Only the "all" subset.
+        self.assertIsNotNone(rows[0]["auroc"])
+        self.assertIsNotNone(rows[0]["ece_platt"])
+        self.assertIn("## Calibration", (self.root / "metrics" / "summary.md").read_text())
+        self.assertEqual(len(figures), 2 if find_spec("matplotlib") else 0)
 
     def test_calibrate_skips_single_class_calibration(self):
         examples = [

@@ -19,7 +19,7 @@ Label convention everywhere: `1 = hallucinated`, and every detector score is con
 | 4. Calibration metrics (RQ2) | `calibrate`, `plot` | `results/metrics/calibration.{csv,json}` (ECE, Brier), `results/figures/reliability/` | done |
 | 5. Post-hoc calibration (RQ3) | `calibrate` | same table, one row per method; `results/metrics/calibrators.json` | done |
 | 6. Remaining detectors | | MiniCheck, Lynx adapters (see `detectors/lynx.py`, `minicheck.py`) | todo |
-| 7. Reporting | | cross-domain comparison figures and tables | todo |
+| 7. Reporting | `report` | `results/metrics/summary.{csv,json,md}`, `results/figures/comparison/` | done |
 
 Each dataset is split by `source_id` (answers to the same question never straddle the split)
 into a **calibration** partition (20%), used only to fit calibrators and tune thresholds, and an
@@ -72,14 +72,22 @@ python3.12 -m venv .venv-lettuce && .venv-lettuce/bin/python -m pip install -e '
 medical-hallucinations evaluate
 medical-hallucinations calibrate   # --methods platt temperature isotonic --n-bins 10
 medical-hallucinations plot        # reliability diagrams
+medical-hallucinations report      # summary tables and comparison figures
 ```
 
 `infer` options: `--device` (`auto` picks cuda, then mps, then cpu), `--batch-size`, `--limit N`,
 and repeatable `--option KEY=VALUE` passed to the adapter (e.g. `--option dtype=float16` on GPUs
 without bfloat16).
 
-Inference appends after every batch, so rerunning `infer` resumes an interrupted run. Use
-`--limit N` for a quick smoke test; `evaluate` reports `coverage` below 100% for partial runs.
+Inference appends after every batch, so rerunning `infer` resumes an interrupted run; a
+half-written last line is dropped and rescored. Each prediction stores the detector revision and
+an `input_hash` of the question, passage, and answer, and resuming refuses a cache whose revision
+or text no longer matches. Use `--limit N` for a quick smoke test; `evaluate` reports `coverage`
+below 100% for partial runs.
+
+To run on another (GPU) machine, copy the repository and `data/processed/` there (or rerun
+`prepare` on the same raw files; the split is deterministic), run `infer`, and copy
+`results/predictions/<detector>/` back.
 
 Calibration uses the **positive-class** convention: a score is P(hallucinated) and is compared
 with the observed hallucination rate in 10 equal-width bins (`[k/10, (k+1)/10)`, with 1.0 in

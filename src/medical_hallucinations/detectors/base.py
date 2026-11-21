@@ -5,6 +5,8 @@ from collections.abc import Sequence
 from math import isfinite
 from typing import Any
 
+from ..schemas import input_hash
+
 
 def resolve_device(device: str | None = None) -> str:
     """Return a torch device string; ``None`` or "auto" picks cuda, then mps, then cpu."""
@@ -69,5 +71,6 @@ class Detector(ABC):
                     "detector": self.name,
                     "revision": self.revision,
                     "hallucination_score": float(score),
+                    "input_hash": input_hash(example),
                 })
         return predictions

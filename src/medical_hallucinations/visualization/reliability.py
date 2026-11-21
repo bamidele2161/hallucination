@@ -12,11 +12,12 @@ import json
 from pathlib import Path
 from typing import Any
 
+# Same method colors as the comparison figures; markers keep identity without color.
 METHOD_STYLES = {
-    "raw": {"color": "#222222", "marker": "o"},
-    "platt": {"color": "#1f77b4", "marker": "s"},
-    "temperature": {"color": "#ff7f0e", "marker": "^"},
-    "isotonic": {"color": "#2ca02c", "marker": "D"},
+    "raw": {"color": "#6b6b6b", "marker": "o"},
+    "platt": {"color": "#2a78d6", "marker": "s"},
+    "temperature": {"color": "#eb6834", "marker": "^"},
+    "isotonic": {"color": "#1baf7a", "marker": "D"},
 }
 
 

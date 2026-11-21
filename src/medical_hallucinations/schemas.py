@@ -6,6 +6,7 @@ answer is hallucinated, so higher scores always mean "more likely hallucinated".
 """
 
 from collections.abc import Iterable
+from hashlib import sha256
 from typing import Any, NotRequired, TypedDict
 
 DOMAINS = ("general", "medical")
@@ -36,6 +37,17 @@ class Prediction(TypedDict):
     detector: str
     revision: str
     hallucination_score: float
+    input_hash: NotRequired[str]  # Absent in predictions cached before it was added.
+
+
+def input_hash(example: dict[str, Any]) -> str:
+    """Short fingerprint of the text a detector sees (question, passage, answer).
+
+    Stored with each prediction so a cached score is never reused after the
+    example's text changes under the same ID.
+    """
+    text = "\x1f".join(example[field] for field in ("question", "passage", "answer"))
+    return sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
 REQUIRED_EXAMPLE_FIELDS = (
