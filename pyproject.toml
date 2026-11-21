@@ -14,6 +14,12 @@ data = ["pyarrow>=14"]
 plot = ["matplotlib>=3.8"]
 hhem = ["torch==2.2.2", "transformers==4.44.2", "numpy<2", "sentencepiece==0.2.0"]
 lettucedetect = ["lettucedetect==0.2.3", "torch>=2.6", "transformers>=5.5", "accelerate>=1.1"]
+# Lynx and MiniCheck run on vLLM (Linux + NVIDIA GPU); install in a separate environment.
+vllm = [
+    "vllm>=0.10",
+    "nltk>=3.9",
+    "minicheck[llm] @ git+https://github.com/Liyan06/MiniCheck.git@b58b9fa69acbd1015ec970fa65dd752413a053d2",
+]
 dev = ["pytest>=8", "ruff>=0.6"]
 
 [project.scripts]
@@ -29,3 +35,7 @@ pythonpath = ["src"]
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+
+[tool.ruff.lint.per-file-ignores]
+# The Lynx prompt is copied verbatim from the model card, including its long line.
+"src/medical_hallucinations/detectors/lynx.py" = ["E501"]

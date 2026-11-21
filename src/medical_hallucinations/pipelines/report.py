@@ -19,6 +19,14 @@ from .evaluate import write_table
 
 METHODS = ("raw", "platt", "temperature", "isotonic")
 
+# Published training data that overlaps our datasets (from each model card).
+TRAINING_OVERLAP = {
+    "lettucedetect": "trained on RAGTruth train data; we use RAGTruth test only",
+    "lettucedetect-v1": "trained on RAGTruth train data; we use RAGTruth test only",
+    "lynx": "trained on CovidQA, PubMedQA and RAGTruth data, so MedHallu is its only "
+            "unseen dataset here; its other results may be inflated",
+}
+
 
 def build_summary(metrics_dir: str | Path = "results/metrics") -> list[dict[str, Any]]:
     """Return the joined summary rows, ordered general domain first."""
@@ -88,6 +96,12 @@ def _markdown(rows: list[dict[str, Any]]) -> str:
         "Calibrators are fitted on the calibration partition; n/a means it held a single class. "
         "Rows marked '% scored' come from partial inference."
     )
+    overlap = "".join(
+        f"- **{name}**: {TRAINING_OVERLAP[name]}.\n"
+        for name in sorted({r["detector"] for r in rows}) if name in TRAINING_OVERLAP
+    )
+    if overlap:
+        notes += f"\n\nTraining-data overlap:\n\n{overlap}"
     return (f"# Summary\n\n{notes}\n\n## Detection (RQ1)\n\n{detection}\n\n"
             f"## Calibration (RQ2, RQ3)\n\n{calibration}\n")
 

@@ -15,7 +15,11 @@ HATCHES = ["", "//", "..", "xx"]
 RAW_COLOR = "#6b6b6b"
 INK, MUTED = "#1f1f1e", "#6b6b6b"
 
-DETECTOR_ORDER = ["hhem", "lettucedetect", "lettucedetect-v1", "minicheck", "lynx"]
+DETECTOR_ORDER = ["hhem", "lettucedetect", "minicheck", "lynx", "lettucedetect-v1"]
+# The four study detectors own the four slots; anything else (e.g. the supplementary
+# v1 model) is neutral gray and told apart by its hatch, never by a generated hue.
+EXTRA_COLOR = "#a3a3a3"
+DETECTOR_COLORS = dict(zip(DETECTOR_ORDER[:4], SERIES_COLORS))
 METHODS = ["raw", "platt", "temperature", "isotonic"]
 
 
@@ -102,11 +106,7 @@ def plot_comparisons(rows: list[dict[str, Any]], figures_dir: str | Path) -> lis
     out.mkdir(parents=True, exist_ok=True)
     datasets = _dataset_order(rows)
     detectors = _ordered({row["detector"] for row in rows}, DETECTOR_ORDER)
-    detector_colors = {
-        name: SERIES_COLORS[DETECTOR_ORDER.index(name) % len(SERIES_COLORS)]
-        if name in DETECTOR_ORDER else SERIES_COLORS[i % len(SERIES_COLORS)]
-        for i, name in enumerate(detectors)
-    }
+    detector_colors = {name: DETECTOR_COLORS.get(name, EXTRA_COLOR) for name in detectors}
     paths = []
 
     # Detection: two panels, each with its own single y-scale.

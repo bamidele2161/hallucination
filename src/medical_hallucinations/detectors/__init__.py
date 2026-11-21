@@ -6,11 +6,12 @@ from typing import Any
 from .base import Detector
 
 # CLI name -> "module:class". The CLI name is also the predictions directory.
-# Add MiniCheck and Lynx here once their adapters are implemented.
 DETECTORS = {
     "hhem": "medical_hallucinations.detectors.hhem:HHEMDetector",
     "lettucedetect": "medical_hallucinations.detectors.lettucedetect:LettuceDetectV2",
     "lettucedetect-v1": "medical_hallucinations.detectors.lettucedetect:LettuceDetectV1",
+    "minicheck": "medical_hallucinations.detectors.minicheck:MiniCheckDetector",
+    "lynx": "medical_hallucinations.detectors.lynx:LynxDetector",
 }
 
 
