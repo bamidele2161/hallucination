@@ -54,6 +54,45 @@ def _metric_row(
     return row
 
 
+def load_scored_partitions(
+    detector_name: str,
+    dataset: str,
+    *,
+    processed_dir: str | Path = "data/processed",
+    predictions_dir: str | Path = "results/predictions",
+) -> tuple[list[dict[str, Any]], dict[str, float], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Return (all examples, scores by ID, scored calibration, scored evaluation)."""
+    examples = read_jsonl(Path(processed_dir) / f"{dataset}.jsonl")
+    scores = {
+        prediction["id"]: prediction["hallucination_score"]
+        for prediction in read_jsonl(predictions_path(predictions_dir, detector_name, dataset))
+    }
+    scored = [example for example in examples if example["id"] in scores]
+    calibration = [example for example in scored if example["partition"] == "calibration"]
+    evaluation = [example for example in scored if example["partition"] == "evaluation"]
+    if not calibration or not evaluation:
+        raise ValueError(f"{detector_name}/{dataset}: both partitions need predictions")
+    return examples, scores, calibration, evaluation
+
+
+def evaluation_subsets(
+    evaluation: list[dict[str, Any]],
+) -> list[tuple[str, list[dict[str, Any]]]]:
+    """The whole evaluation partition, then one subset per difficulty level."""
+    subsets = [("all", evaluation)]
+    for difficulty in sorted({e["difficulty"] for e in evaluation if e.get("difficulty")}):
+        subsets.append((
+            f"difficulty={difficulty}",
+            [e for e in evaluation if e.get("difficulty") == difficulty],
+        ))
+    return subsets
+
+
+def coverage(examples: list[dict[str, Any]], evaluation: list[dict[str, Any]]) -> float:
+    """Fraction of the prepared evaluation partition that has predictions."""
+    return len(evaluation) / sum(example["partition"] == "evaluation" for example in examples)
+
+
 def evaluate_detector(
     detector_name: str,
     dataset: str,
@@ -66,16 +105,9 @@ def evaluate_detector(
     One row covers the whole evaluation partition; MedHallu also gets one row
     per difficulty level. ``coverage`` below 1 means inference was partial.
     """
-    examples = read_jsonl(Path(processed_dir) / f"{dataset}.jsonl")
-    scores = {
-        prediction["id"]: prediction["hallucination_score"]
-        for prediction in read_jsonl(predictions_path(predictions_dir, detector_name, dataset))
-    }
-    scored = [example for example in examples if example["id"] in scores]
-    calibration = [example for example in scored if example["partition"] == "calibration"]
-    evaluation = [example for example in scored if example["partition"] == "evaluation"]
-    if not calibration or not evaluation:
-        raise ValueError(f"{detector_name}/{dataset}: both partitions need predictions")
+    examples, scores, calibration, evaluation = load_scored_partitions(
+        detector_name, dataset, processed_dir=processed_dir, predictions_dir=predictions_dir
+    )
 
     calibration_labels = [example["label"] for example in calibration]
     threshold = None  # Undefined when the calibration rows hold no hallucinations.
@@ -83,25 +115,39 @@ def evaluate_detector(
         threshold = best_f1_threshold(
             calibration_labels, [scores[example["id"]] for example in calibration]
         )
-    subsets = [("all", evaluation)]
-    for difficulty in sorted({e["difficulty"] for e in evaluation if e.get("difficulty")}):
-        subsets.append((
-            f"difficulty={difficulty}",
-            [e for e in evaluation if e.get("difficulty") == difficulty],
-        ))
-
-    n_evaluation = sum(example["partition"] == "evaluation" for example in examples)
     return [
         {
             "detector": detector_name,
             "dataset": dataset,
             "domain": examples[0]["domain"],
             "subset": subset,
-            "coverage": len(evaluation) / n_evaluation,
+            "coverage": coverage(examples, evaluation),
             **_metric_row(rows, scores, threshold),
         }
-        for subset, rows in subsets
+        for subset, rows in evaluation_subsets(evaluation)
     ]
+
+
+def discover_runs(
+    processed_dir: str | Path, predictions_dir: str | Path
+) -> list[tuple[str, str]]:
+    """(detector, dataset) pairs with cached predictions and a prepared dataset."""
+    return [
+        (path.parent.name, path.stem)
+        for path in sorted(Path(predictions_dir).glob("*/*.jsonl"))
+        if (Path(processed_dir) / f"{path.stem}.jsonl").exists()
+    ]
+
+
+def write_table(rows: list[dict[str, Any]], metrics_dir: str | Path, stem: str) -> None:
+    """Write rows to <metrics_dir>/<stem>.json and <stem>.csv."""
+    metrics_dir = Path(metrics_dir)
+    metrics_dir.mkdir(parents=True, exist_ok=True)
+    (metrics_dir / f"{stem}.json").write_text(json.dumps(rows, indent=2) + "\n")
+    with (metrics_dir / f"{stem}.csv").open("w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 def evaluate_all(
@@ -112,21 +158,11 @@ def evaluate_all(
 ) -> list[dict[str, Any]]:
     """Evaluate every detector/dataset pair that has predictions and save the table."""
     rows = []
-    for path in sorted(Path(predictions_dir).glob("*/*.jsonl")):
-        detector_name, dataset = path.parent.name, path.stem
-        if not (Path(processed_dir) / f"{dataset}.jsonl").exists():
-            continue
+    for detector_name, dataset in discover_runs(processed_dir, predictions_dir):
         rows.extend(evaluate_detector(
             detector_name, dataset, processed_dir=processed_dir, predictions_dir=predictions_dir
         ))
     if not rows:
         raise FileNotFoundError(f"No predictions found under {predictions_dir}")
-
-    metrics_dir = Path(metrics_dir)
-    metrics_dir.mkdir(parents=True, exist_ok=True)
-    (metrics_dir / "detection.json").write_text(json.dumps(rows, indent=2) + "\n")
-    with (metrics_dir / "detection.csv").open("w", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=list(rows[0]))
-        writer.writeheader()
-        writer.writerows(rows)
+    write_table(rows, metrics_dir, "detection")
     return rows

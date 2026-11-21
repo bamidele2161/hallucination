@@ -11,7 +11,9 @@ dependencies = []
 
 [project.optional-dependencies]
 data = ["pyarrow>=14"]
+plot = ["matplotlib>=3.8"]
 hhem = ["torch==2.2.2", "transformers==4.44.2", "numpy<2", "sentencepiece==0.2.0"]
+lettucedetect = ["lettucedetect==0.2.3", "torch>=2.6", "transformers>=5.5", "accelerate>=1.1"]
 dev = ["pytest>=8", "ruff>=0.6"]
 
 [project.scripts]

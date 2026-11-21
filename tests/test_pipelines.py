@@ -1,11 +1,14 @@
-"""End-to-end checks of stages 2 and 3 with a fake detector (no model weights)."""
+"""End-to-end checks of stages 2 to 5 with a fake detector (no model weights)."""
+import json
 import tempfile
 import unittest
+from importlib.util import find_spec
 from pathlib import Path
 
 from medical_hallucinations.datasets.base import read_jsonl, write_jsonl
 from medical_hallucinations.datasets.splits import split_by_source
 from medical_hallucinations.detectors.base import Detector
+from medical_hallucinations.pipelines.calibrate import calibrate_all
 from medical_hallucinations.pipelines.evaluate import evaluate_all
 from medical_hallucinations.pipelines.inference import predictions_path, run_inference
 from medical_hallucinations.schemas import validate_examples
@@ -23,6 +26,13 @@ class FakeDetector(Detector):
     def score_batch(self, batch):
         self.calls += len(batch)
         return [0.2 + 0.5 * e["label"] + int(e["source_id"]) % 10 / 50 for e in batch]
+
+
+class NoisyDetector(FakeDetector):
+    """Overlapping class scores, so calibrators have something to fit."""
+
+    def score_batch(self, batch):
+        return [0.3 + 0.3 * e["label"] + int(e["source_id"]) * 7 % 11 / 25 for e in batch]
 
 
 def make_examples(n_sources=20):
@@ -91,6 +101,57 @@ class PipelineTests(unittest.TestCase):
         self.assertGreater(overall["auroc"], 0.9)
         self.assertLessEqual(overall["auroc_ci_low"], overall["auroc"])
         self.assertTrue((self.root / "metrics" / "detection.csv").exists())
+
+    def _calibrate(self, examples):
+        write_jsonl(self.root / "processed" / "toy.jsonl", examples)
+        return calibrate_all(
+            processed_dir=self.root / "processed",
+            predictions_dir=self.root / "predictions",
+            metrics_dir=self.root / "metrics",
+        )
+
+    def test_calibrate_fits_on_calibration_rows_only(self):
+        output = predictions_path(self.root / "predictions", "fake", "toy")
+        run_inference(NoisyDetector(), self.examples, output, progress=False)
+        rows = self._calibrate(self.examples)
+        self.assertEqual(
+            [(r["subset"], r["method"]) for r in rows if r["subset"] == "all"],
+            [("all", m) for m in ("raw", "platt", "temperature", "isotonic")],
+        )
+        self.assertTrue(all(r["ece"] is not None for r in rows))
+        params = json.loads((self.root / "metrics" / "calibrators.json").read_text())
+
+        # Flipping every evaluation label must not change any fitted parameter.
+        flipped = [
+            {**e, "label": 1 - e["label"]} if e["partition"] == "evaluation" else e
+            for e in self.examples
+        ]
+        self._calibrate(flipped)
+        self.assertEqual(
+            params, json.loads((self.root / "metrics" / "calibrators.json").read_text())
+        )
+        reliability = json.loads((self.root / "metrics" / "reliability.json").read_text())
+        self.assertEqual(reliability["n_bins"], 10)
+
+        if find_spec("matplotlib"):
+            from medical_hallucinations.visualization.reliability import plot_all
+
+            paths = plot_all(metrics_dir=self.root / "metrics", figures_dir=self.root / "figures")
+            self.assertEqual(len(paths), 3)  # all, difficulty=easy, difficulty=hard
+            self.assertTrue(all(path.stat().st_size > 0 for path in paths))
+
+    def test_calibrate_skips_single_class_calibration(self):
+        examples = [
+            {**e, "label": 0} if e["partition"] == "calibration" else e for e in self.examples
+        ]
+        output = predictions_path(self.root / "predictions", "fake", "toy")
+        run_inference(NoisyDetector(), examples, output, progress=False)
+        rows = self._calibrate(examples)
+        overall = {r["method"]: r for r in rows if r["subset"] == "all"}
+        self.assertIsNotNone(overall["raw"]["ece"])
+        self.assertIsNone(overall["platt"]["ece"])
+        records = json.loads((self.root / "metrics" / "calibrators.json").read_text())
+        self.assertTrue(all("both" in r["skipped"] for r in records))
 
 
 if __name__ == "__main__":

@@ -20,9 +20,11 @@ class HHEMDetector(Detector):
     name = "hhem-2.1-open"
     revision = MODEL_REVISION
 
-    def __init__(self) -> None:
+    def __init__(self, device: str | None = None) -> None:
         import torch
         from transformers import AutoModelForSequenceClassification
+
+        from .base import resolve_device
 
         self._torch = torch
         # The pinned official model includes its own model implementation.
@@ -32,6 +34,7 @@ class HHEMDetector(Detector):
             trust_remote_code=True,
             use_safetensors=True,
         )
+        self.model.to(resolve_device(device))
         self.model.eval()
         self.model.requires_grad_(False)
 
